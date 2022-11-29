@@ -54,6 +54,7 @@ def listFcsInGDB(gdb):
 
 def create_shapefile(folder, ShapefileName):
     # Create a shapefile to merge everything
+    print("Creating master Shapefile" + str(folder) + str(ShapefileName))
     arcpy.CreateFeatureclass_management(
         out_path=folder,
         out_name=ShapefileName,
@@ -61,11 +62,7 @@ def create_shapefile(folder, ShapefileName):
         template="",
         has_m="DISABLED",
         has_z="DISABLED",
-        spatial_reference="GEOGCS['GCS_WGS_1984',DATUM['D_WGS_1984',SPHEROID['WGS_1984',6378137.0,298.257223563]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]];-400 -400 1000000000;-100000 10000;-100000 10000;8.98315284119522E-09;0.001;0.001;IsHighPrecision",
-        config_keyword="",
-        spatial_grid_1="0",
-        spatial_grid_2="0",
-        spatial_grid_3="0")
+        spatial_reference="GEOGCS['GCS_WGS_1984',DATUM['D_WGS_1984',SPHEROID['WGS_1984',6378137.0,298.257223563]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]];-400 -400 1000000000;-100000 10000;-100000 10000;8.98315284119522E-09;0.001;0.001;IsHighPrecision",)
 
 
 def polygonTransform(FeatureClass):
@@ -95,7 +92,7 @@ def polygonTransform(FeatureClass):
         in_table=FeatureClass,
         field="MERGE",
         expression="1",
-        expression_type="VB",
+        expression_type="PYTHON3",
         code_block="")
 
     print("Field Calculated")
@@ -131,14 +128,25 @@ def polygonTransform(FeatureClass):
 
 
 def pointTransform(FeatureClass):
-    # set polygons which will be used to dissolve and create multipart
-    # polygons in a single shapefile
+    # create a name for the buffer and singlepart polygons to be created
+    buffer = FeatureClass + "_buffer"
     dissolved = FeatureClass + "_dissolved"
     singlepart = FeatureClass + "_finished"
 
+    # run buffer on the feature class to create a polygon feature class
+    arcpy.Buffer_analysis(
+        in_features=FeatureClass,
+        out_feature_class=buffer,
+        buffer_distance_or_field="5000 Meters",
+        line_side="FULL", line_end_type="ROUND",
+        dissolve_option="NONE",
+        dissolve_field="", method="PLANAR")
+
+    print("Buffer created for lines - " + buffer)
+
     # add field "merge"
     arcpy.AddField_management(
-        in_table=FeatureClass,
+        in_table=buffer,
         field_name="MERGE",
         field_type="TEXT",
         field_precision="",
@@ -154,16 +162,16 @@ def pointTransform(FeatureClass):
     # calculate the merge field to value 1, so that every polygon is
     # a value of 1
     arcpy.CalculateField_management(
-        in_table=FeatureClass,
+        in_table=buffer,
         field="MERGE", expression="1",
-        expression_type="VB",
+        expression_type="PYTHON3",
         code_block="")
 
     print("Field Calculated")
 
     # dissolve based on the value 1 in 'merge' field
     arcpy.Dissolve_management(
-        in_features=FeatureClass,
+        in_features=buffer,
         out_feature_class=dissolved,
         dissolve_field="MERGE",
         statistics_fields="",
@@ -179,16 +187,15 @@ def pointTransform(FeatureClass):
         in_features=dissolved,
         out_feature_class=singlepart)
 
-    print("Multi part to single part explosion")
+    print("Multi part to single part explosion performed")
 
     # Append the result into the shapefile that has all appended
     # polygons
+    print("Appending " + str(singlepart) + " to " + str(ShapefileAll) )
     arcpy.Append_management(
         inputs=singlepart,
         target=ShapefileAll,
-        schema_type="NO_TEST",
-        field_mapping="",
-        subtype="")
+        schema_type="NO_TEST")
 
 
 def lineTransform(FeatureClass):
@@ -199,16 +206,17 @@ def lineTransform(FeatureClass):
 
     # run buffer on the feature class to create a polygon feature class
     arcpy.Buffer_analysis(
-        in_features=Shapefile,
+        in_features=FeatureClass,
         out_feature_class=buffer,
         buffer_distance_or_field="5000 Meters",
         line_side="FULL", line_end_type="ROUND",
         dissolve_option="NONE",
         dissolve_field="", method="PLANAR")
 
-    print("Buffer created for points - " + buffer)
+    print("Buffer created for lines - " + buffer)
 
     # add a field called "merge"
+    print("add field for " + FeatureClass)
     arcpy.AddField_management(
         in_table=buffer,
         field_name="MERGE",
@@ -220,12 +228,14 @@ def lineTransform(FeatureClass):
         field_is_nullable="NULLABLE",
         field_is_required="NON_REQUIRED",
         field_domain="")
+    print("Field Merge Added")
 
     # calculate the merge field to value 1
     arcpy.CalculateField_management(
-        in_table=buffer, field="MERGE",
+        in_table=buffer, 
+        field="MERGE",
         expression="1",
-        expression_type="VB",
+        expression_type="PYTHON3",
         code_block="")
 
     print("Field Calculated")
@@ -262,8 +272,8 @@ def lineTransform(FeatureClass):
 
 if __name__ == '__main__':
     folder = r"C:\Temp\Cambridge_indian_reserve"
-    url = 'https://ftp.maps.canada.ca/pub/nrcan_rncan/vector/canvec/shp/ \
-        Transport/canvec_250K_ON_Transport_shp.zip'
+    url = 'https://ftp.maps.canada.ca/pub/nrcan_rncan/vector/canvec/shp/Transport/canvec_250K_ON_Transport_shp.zip'
+    # url = 'https://data.montreal.ca/dataset/ff4cfec0-34a5-474b-a53e-eb5aeffba74a/resource/dae9e0ac-105a-4016-bd66-4a0bec3e07ca/download/immeubles-terrains-droit-preemption.zip'
     save_path = r"C:\TEMP\download.zip"
     workspace = r"C:\TEMP\Cambridge_indian_reserve\canvec_250K_ON_Transport"
     ShapefileName = "Transport_1M_Merged.shp"
@@ -333,14 +343,17 @@ if __name__ == '__main__':
         print(str(type))
         # If the type is polygon run through these instructions
         if type == "Polygon":
+            print("polygontransform on " + str(FeatureClass))
             polygonTransform(FeatureClass)
 
         # run these instructions if type is point
         elif type == "Point":
+            print("pointtransform on " + str(FeatureClass))
             pointTransform(FeatureClass)
 
         # run these instructions if type is point
         elif type == "Polyline":
+            print("polylinetransform on " + str(FeatureClass))
             lineTransform(FeatureClass)
 
     # now work on the master shapefile
@@ -364,7 +377,7 @@ if __name__ == '__main__':
         in_table=ShapefileAll,
         field="MERGE",
         expression="1",
-        expression_type="VB",
+        expression_type="PYTHON3",
         code_block="")
 
     print("Field Calculated")
@@ -410,7 +423,7 @@ if __name__ == '__main__':
     arcpy.CalculateField_management(
         ShapefileAll, "VERTICES",
         "!Shape!.pointCount-!Shape!.partCount",
-        "PYTHON")
+        "PYTHON3")
 
     print("Calculate the amount of vertices in VERTICES field")
 
@@ -433,8 +446,9 @@ if __name__ == '__main__':
         geoJSON="GEOJSON")
 
     print("ESRI JSON created")
-
+    '''
     arcpy.Delete_management(folder)
     arcpy.Delete_management(dissolve)
     arcpy.Delete_management(singlepart)
     arcpy.Delete_management(save_path)
+    '''
